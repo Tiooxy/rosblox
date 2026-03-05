@@ -1,0 +1,695 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- KONFIGURASI TEMA WARNA
+local BGColor = Color3.fromRGB(10, 5, 15)
+local PanelColor = Color3.fromRGB(25, 15, 30)
+
+-- STATE GLOBAL
+local targetWalkSpeed = 16 
+local flySpeed = 10
+local isFlying, isGuiOpen = false, false
+local isFollowing = false
+local activeDropdownClose = nil
+local flyConnection = nil 
+local followConnection = nil
+
+-- STATE EMOTE
+local currentEmoteTrack = nil
+local selectedEmoteId = nil
+local emoteSpeedMultiplier = 1 -- Default speed 1.0 (100%)
+
+-- DATABASE EMOTE
+local DancesData = {
+    ["Acelerada Dance"] = "rbxassetid://103360497719320",
+    ["Applaus"] = "rbxassetid://10713966026",
+    ["Aura Dance"] = "rbxassetid://97086109091396",
+    ["AuraFarming Dance"] = "rbxassetid://118552217459650",
+    ["Club Dance1"] = "rbxassetid://79030779678073",
+    ["Coffin Dance"] = "rbxassetid://93637562385834",
+    ["Confes Dance"] = "rbxassetid://109585388574936",
+    ["Confess2 Dance"] = "rbxassetid://108873777157620",
+    ["Desirable Dance"] = "rbxassetid://97170161380575",
+    ["Dorky Dance"] = "rbxassetid://10714069471",
+    ["Dougie Dance"] = "rbxassetid://126035888065434",
+    ["Druski Dance"] = "rbxassetid://89805902889012",
+    ["Festive Dance"] = "rbxassetid://15679621440",
+    ["Fly Angel"] = "rbxassetid://77529400769588",
+    ["Fresh Dance"] = "rbxassetid://101904910487412",
+    ["Garry Dance"] = "rbxassetid://124896171012585",
+    ["Girl Dance"] = "rbxassetid://124982597491660",
+    ["Head Bop"] = "rbxassetid://15517864808",
+    ["Holiday Dance"] = "rbxassetid://10714365721",
+    ["Jabba Dance"] = "rbxassetid://137610730422666",
+    ["Jotaro Pose"] = "rbxassetid://89973831894197",
+    ["Jumpstyle"] = "rbxassetid://138647889956297",
+    ["Hip Sway"] = "rbxassetid://138316142522795",
+    ["Kotonai Dance"] = "rbxassetid://122639636262924",
+    ["Louisiana"] = "rbxassetid://121856481052373",
+    ["Macarena Dance"] = "rbxassetid://106534063593882",
+    ["Moshing Dance"] = "rbxassetid://96147994216119",
+    ["PopLock Dance"] = "rbxassetid://109351092282275",
+    ["Popular Dance"] = "rbxassetid://93062298566806",
+    ["PullUp Dance"] = "rbxassetid://98818060512049",
+    ["Rakai Dance"] = "rbxassetid://124332715225032",
+    ["Rambunctious Dance"] = "rbxassetid://85916053135662",
+    ["Rat Dance"] = "rbxassetid://78684440273676",
+    ["Robot Dance"] = "rbxassetid://96973812082139",
+    ["Rodeo Dance"] = "rbxassetid://87711696418876",
+    ["Rodeo1 Dance"] = "rbxassetid://10714395175",
+    ["Rollie Dance"] = "rbxassetid://138097548542741",
+    ["SajaBoys Dance"] = "rbxassetid://77471219823552",
+    ["Salsa Dance"] = "rbxassetid://75854897933159",
+    ["Salsa2 Dance"] = "rbxassetid://114401977929065",
+    ["Shoulder Dance"] = "rbxassetid://121992329752005",
+    ["Spike Dance"] = "rbxassetid://88063419539888",
+    ["Sturdy Dance"] = "rbxassetid://128968764985212",
+    ["Sturdy2 Dance"] = "rbxassetid://122884053950359",
+    ["TchuThca Dance"] = "rbxassetid://99951812464005",
+    ["Tidy Dance"] = "rbxassetid://128338164014860",
+    ["Timeless Dance"] = "rbxassetid://129936490508500",
+    ["Torture Dance"] = "rbxassetid://102261822449497",
+    ["TrueHeart Dance"] = "rbxassetid://85047784800271",
+    ["Weekend1 Dance"] = "rbxassetid://71105746210464",
+    ["Ybjump Dance"] = "rbxassetid://15609995579",
+}
+
+local PosesData = {
+    ["Sit 1"] = "rbxassetid://134930050091048",
+    ["Sit 2"] = "rbxassetid://129976380062762",
+    ["Sit 3"] = "rbxassetid://112779764845963",
+    ["Sit 4"] = "rbxassetid://104595291484684",
+    ["Sit Sad"] = "rbxassetid://76194987015555",
+    ["Kicking Feet Sit"] = "rbxassetid://95731946834298",
+    ["Crying Sit"] = "rbxassetid://136012762295317",
+    ["hugging"] = "rbxassetid://137631388828941",
+    ["Fake Dead"] = "rbxassetid://125450209491075",
+    ["Wall Lean Pose"] = "rbxassetid://113694692828125",
+    ["Cute Lie"] = "rbxassetid://128956534984006",
+    ["StandPose1"] = "rbxassetid://99499783161907",
+    ["Bored Pose"] = "rbxassetid://10713992055",
+    ["Bubbly Sit"] = "rbxassetid://93120341268524",
+    ["Sweet Hug"] = "rbxassetid://118264035209903",
+    ["Girl Pose1"] = "rbxassetid://116179501436539",
+    ["Girl Pose2"] = "rbxassetid://111733880310741",
+    ["Girl Pose3"] = "rbxassetid://116179501436539",
+    ["Girl Pose4"] = "rbxassetid://129100070542534",
+    ["Girl Pose5"] = "rbxassetid://127563130887228",
+    ["Girl Pose6"] = "rbxassetid://87225106485926",
+    ["Pose"] = "rbxassetid://103267638009024",
+    ["Pose2"] = "rbxassetid://91340687009482",
+    ["Pose3"] = "rbxassetid://120629563851640",
+    ["Laying Down"] = "rbxassetid://128941887300629",
+    ["Sit 5"] = "rbxassetid://102544119718369",
+    ["Sit 6"] = "rbxassetid://77139456213922",
+    ["Spiderman Hang"] = "rbxassetid://83345430870757",
+    ["Car Pose"] = "rbxassetid://132760747409859",
+    ["Aura Farming Wall"] = "rbxassetid://114388371896974",
+    ["Godly Aura Fly"] = "rbxassetid://76361248833307"
+}
+
+-- TABEL UNTUK EFEK RAINBOW RGB
+local rainbowElements = {}
+local function addRainbow(element, property)
+    table.insert(rainbowElements, {obj = element, prop = property})
+end
+
+-- ANIMASI TOMBOL INTERAKTIF
+local function ApplyButtonInteraction(btn)
+    if not btn:IsA("GuiObject") then return end
+    local scale = Instance.new("UIScale", btn)
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            TweenService:Create(scale, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 0.92}):Play()
+        end
+    end)
+    btn.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            TweenService:Create(scale, TweenInfo.new(0.25, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out), {Scale = 1}):Play()
+        end
+    end)
+end
+
+-- GUI BASE
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "DeltaPro_Micro"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+pcall(function() ScreenGui.Parent = CoreGui end)
+
+-- UNIVERSAL DRAG LOGIC
+local function MakeDraggable(obj)
+    local dragging, dragInput, dragStart, startPos
+    obj.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true; dragStart = input.Position; startPos = obj.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            obj.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+-- ICON FLOATING
+local FloatingIcon = Instance.new("TextButton", ScreenGui)
+FloatingIcon.Size = UDim2.new(0, 40, 0, 40); FloatingIcon.Position = UDim2.new(0, 20, 0, 20)
+FloatingIcon.BackgroundColor3 = BGColor; FloatingIcon.Text = "❤️"; FloatingIcon.TextColor3 = Color3.new(1,1,1)
+FloatingIcon.TextSize = 25; FloatingIcon.Font = Enum.Font.FredokaOne; FloatingIcon.ZIndex = 1000
+MakeDraggable(FloatingIcon); ApplyButtonInteraction(FloatingIcon)
+Instance.new("UICorner", FloatingIcon).CornerRadius = UDim.new(1, 0)
+addRainbow(Instance.new("UIStroke", FloatingIcon), "Color")
+
+-- FRAME UTAMA
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 520, 0, 340); MainFrame.Position = UDim2.new(0.5, -260, 0.5, -170)
+MainFrame.BackgroundColor3 = BGColor; MainFrame.Visible = false; MainFrame.Active = true; MainFrame.ClipsDescendants = true
+MakeDraggable(MainFrame)
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 15)
+addRainbow(Instance.new("UIStroke", MainFrame), "Color")
+
+-- HEADER & TEKS BERJALAN
+local Header = Instance.new("Frame", MainFrame); Header.Size = UDim2.new(1, 0, 0, 50); Header.BackgroundTransparency = 1
+local Title = Instance.new("TextLabel", Header); Title.Size = UDim2.new(1, -60, 1, -15); Title.Position = UDim2.new(0, 20, 0, 0); Title.Text = "Script Tools All Map"; Title.TextColor3 = Color3.new(1,1,1); Title.TextSize = 26; Title.Font = "PatrickHand"; Title.BackgroundTransparency = 1; Title.TextXAlignment = "Left"
+
+local MarqueeFrame = Instance.new("Frame", Header)
+MarqueeFrame.Size = UDim2.new(1, -60, 0, 15); MarqueeFrame.Position = UDim2.new(0, 20, 0, 30); MarqueeFrame.BackgroundTransparency = 1; MarqueeFrame.ClipsDescendants = true
+local MarqueeText = Instance.new("TextLabel", MarqueeFrame)
+MarqueeText.Size = UDim2.new(2, 0, 1, 0); MarqueeText.Position = UDim2.new(0, 0, 0, 0); MarqueeText.BackgroundTransparency = 1
+MarqueeText.Text = "[ VIP V33 Micro ] | [ Emotes, Speed, Fly, Teleport, Auto Follow ]" 
+MarqueeText.TextColor3 = Color3.new(1,1,1); MarqueeText.TextSize = 14 
+MarqueeText.Font = "FredokaOne"; MarqueeText.TextXAlignment = "Left"
+addRainbow(MarqueeText, "TextColor3") 
+
+local HeaderLine = Instance.new("Frame", Header); HeaderLine.Size = UDim2.new(1, 0, 0, 2); HeaderLine.Position = UDim2.new(0, 0, 1, 0); HeaderLine.BorderSizePixel = 0
+addRainbow(HeaderLine, "BackgroundColor3") 
+
+local CloseBtn = Instance.new("TextButton", Header); CloseBtn.Size = UDim2.new(0, 40, 0, 40); CloseBtn.Position = UDim2.new(1, -50, 0, 8); CloseBtn.Text = "X"; CloseBtn.TextColor3 = Color3.fromRGB(255, 60, 60); CloseBtn.TextSize = 35; CloseBtn.Font = "FredokaOne"; CloseBtn.BackgroundTransparency = 1
+ApplyButtonInteraction(CloseBtn)
+
+-- SIDEBAR 
+local Sidebar = Instance.new("Frame", MainFrame); Sidebar.Size = UDim2.new(0, 125, 1, -55); Sidebar.Position = UDim2.new(0, 0, 0, 55); Sidebar.BackgroundTransparency = 1
+local SidebarLine = Instance.new("Frame", Sidebar); SidebarLine.Size = UDim2.new(0, 2, 1, 0); SidebarLine.Position = UDim2.new(1, 0, 0, 0); SidebarLine.BorderSizePixel = 0
+addRainbow(SidebarLine, "BackgroundColor3") 
+
+local function CreateTab(name, pos)
+    local Tab = Instance.new("TextButton", Sidebar); Tab.Size = UDim2.new(1, -10, 0, 45); Tab.Position = UDim2.new(0, 10, 0, pos); Tab.Text = name; Tab.TextColor3 = Color3.fromRGB(200, 200, 200); Tab.TextSize = 24; Tab.Font = "PatrickHand"; Tab.BackgroundTransparency = 1; Tab.TextXAlignment = "Left"
+    local L = Instance.new("Frame", Tab); L.Size = UDim2.new(0, 4, 0.7, 0); L.Position = UDim2.new(0, -10, 0.15, 0); L.Visible = false
+    addRainbow(L, "BackgroundColor3") 
+    ApplyButtonInteraction(Tab)
+    return Tab, L
+end
+
+local EmoteTab, EmoteLine = CreateTab("emote", 15)
+local MiscTab, MiscLine = CreateTab("misc", 65)
+local TeleportTab, TeleportLine = CreateTab("teleport", 115)
+local InfoTab, InfoLine = CreateTab("info", 165)
+
+-- CONTENT AREA
+local ContentArea = Instance.new("Frame", MainFrame); ContentArea.Size = UDim2.new(1, -135, 1, -65); ContentArea.Position = UDim2.new(0, 135, 0, 60); ContentArea.BackgroundTransparency = 1
+
+local function CreatePage()
+    local Page = Instance.new("ScrollingFrame", ContentArea); Page.Size = UDim2.new(1, 0, 1, 0); Page.BackgroundTransparency = 1; Page.Visible = false; Page.ScrollBarThickness = 2; Page.AutomaticCanvasSize = Enum.AutomaticSize.Y; Page.Active = true; Page.ScrollingDirection = Enum.ScrollingDirection.Y
+    local L = Instance.new("UIListLayout", Page); L.Padding = UDim.new(0, 15); L.HorizontalAlignment = "Center"; L.SortOrder = "LayoutOrder"
+    Instance.new("UIPadding", Page).PaddingTop = UDim.new(0, 15); Instance.new("UIPadding", Page).PaddingBottom = UDim.new(0, 15)
+    return Page
+end
+local EmotePage = CreatePage(); local MiscPage = CreatePage(); local TeleportPage = CreatePage(); local InfoPage = CreatePage()
+
+-- SISTEM SEARCHABLE DROPDOWN
+local function CreateSearchableDropdown(parent, placeholder, order, optionsDict, callback)
+    local Container = Instance.new("Frame", parent); Container.Size = UDim2.new(1, -25, 0, 45); Container.BackgroundTransparency = 1; Container.LayoutOrder = order
+    local MainBtn = Instance.new("TextButton", Container); MainBtn.Size = UDim2.new(1, 0, 0, 45); MainBtn.BackgroundColor3 = PanelColor; MainBtn.Text = placeholder; MainBtn.TextColor3 = Color3.new(1,1,1); MainBtn.TextSize = 24; MainBtn.Font = "PatrickHand"
+    Instance.new("UICorner", MainBtn).CornerRadius = UDim.new(0, 10)
+    addRainbow(Instance.new("UIStroke", MainBtn), "Color")
+    ApplyButtonInteraction(MainBtn)
+
+    local DropMain = Instance.new("Frame", MainBtn)
+    DropMain.Size = UDim2.new(1, 0, 0, 0); DropMain.Position = UDim2.new(0, 0, 1, 5)
+    DropMain.BackgroundColor3 = PanelColor; DropMain.ClipsDescendants = true
+    Instance.new("UICorner", DropMain).CornerRadius = UDim.new(0, 10)
+    DropMain.Visible = false; DropMain.ZIndex = 500
+
+    local SearchBox = Instance.new("TextBox", DropMain)
+    SearchBox.Size = UDim2.new(1, -10, 0, 30); SearchBox.Position = UDim2.new(0, 5, 0, 5)
+    SearchBox.BackgroundColor3 = BGColor; SearchBox.TextColor3 = Color3.new(1,1,1)
+    SearchBox.PlaceholderText = "Search..."; SearchBox.Text = ""
+    SearchBox.Font = "PatrickHand"; SearchBox.TextSize = 20
+    Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0,5)
+
+    local List = Instance.new("ScrollingFrame", DropMain)
+    List.Size = UDim2.new(1, 0, 1, -40); List.Position = UDim2.new(0, 0, 0, 40)
+    List.BackgroundTransparency = 1; List.ScrollBarThickness = 4
+    Instance.new("UIListLayout", List)
+
+    local names = {}
+    local function UpdateNames()
+        names = {}
+        for k, _ in pairs(optionsDict) do table.insert(names, k) end
+        table.sort(names)
+    end
+    UpdateNames()
+
+    local function Populate(filterText)
+        for _, v in pairs(List:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end
+        local count = 0
+        for _, name in ipairs(names) do
+            if filterText == "" or string.find(string.lower(name), string.lower(filterText)) then
+                count = count + 1
+                local b = Instance.new("TextButton", List); b.Size = UDim2.new(1, 0, 0, 35); b.Text = name; b.TextColor3 = Color3.new(1,1,1); b.TextSize = 20; b.Font = "PatrickHand"; b.BackgroundTransparency = 1
+                b.MouseButton1Click:Connect(function()
+                    MainBtn.Text = name
+                    callback(optionsDict[name])
+                    TweenService:Create(DropMain, TweenInfo.new(0.3), {Size = UDim2.new(1,0,0,0)}):Play()
+                    TweenService:Create(Container, TweenInfo.new(0.3), {Size = UDim2.new(1,-25,0,45)}):Play()
+                    task.delay(0.3, function() DropMain.Visible = false end)
+                    activeDropdownClose = nil
+                end)
+                ApplyButtonInteraction(b)
+            end
+        end
+        List.CanvasSize = UDim2.new(0, 0, 0, count * 35)
+    end
+
+    SearchBox.Changed:Connect(function(prop)
+        if prop == "Text" then Populate(SearchBox.Text) end
+    end)
+
+    local function Toggle()
+        if DropMain.Visible then
+            TweenService:Create(DropMain, TweenInfo.new(0.3), {Size = UDim2.new(1,0,0,0)}):Play()
+            TweenService:Create(Container, TweenInfo.new(0.3), {Size = UDim2.new(1,-25,0,45)}):Play()
+            task.delay(0.3, function() DropMain.Visible = false end); activeDropdownClose = nil
+        else
+            if activeDropdownClose then activeDropdownClose() end
+            DropMain.Visible = true; SearchBox.Text = ""; Populate("")
+            TweenService:Create(DropMain, TweenInfo.new(0.3), {Size = UDim2.new(1,0,0,160)}):Play()
+            TweenService:Create(Container, TweenInfo.new(0.3), {Size = UDim2.new(1,-25,0,210)}):Play()
+            activeDropdownClose = Toggle
+        end
+    end
+    MainBtn.MouseButton1Click:Connect(Toggle)
+
+    local function RefreshData(newDict)
+        optionsDict = newDict
+        UpdateNames()
+        if DropMain.Visible then Populate(SearchBox.Text) end
+    end
+
+    return Container, MainBtn, RefreshData
+end
+
+-- SISTEM SLIDER (BAR)
+local function CreateSlider(parent, titleText, minVal, maxVal, defaultVal, layoutOrder, callback)
+    local Container = Instance.new("Frame", parent)
+    Container.Size = UDim2.new(1, -20, 0, 65); Container.BackgroundTransparency = 1; Container.LayoutOrder = layoutOrder
+
+    local Title = Instance.new("TextLabel", Container)
+    Title.Size = UDim2.new(1, -50, 0, 25); Title.Position = UDim2.new(0,0,0,0)
+    Title.Text = titleText:upper(); Title.TextColor3 = Color3.new(1,1,1); Title.TextSize = 24; Title.Font = "PatrickHand"; Title.BackgroundTransparency = 1; Title.TextXAlignment = Enum.TextXAlignment.Left
+
+    local ValText = Instance.new("TextLabel", Container)
+    ValText.Size = UDim2.new(0, 50, 0, 25); ValText.Position = UDim2.new(1, -50, 0, 0)
+    ValText.Text = tostring(defaultVal); ValText.TextColor3 = Color3.new(1,1,1); ValText.TextSize = 24; ValText.Font = "PatrickHand"; ValText.BackgroundTransparency = 1; ValText.TextXAlignment = Enum.TextXAlignment.Right
+
+    local Track = Instance.new("TextButton", Container)
+    Track.Size = UDim2.new(1, 0, 0, 15); Track.Position = UDim2.new(0, 0, 0, 35); Track.BackgroundColor3 = PanelColor; Track.Text = ""; Track.AutoButtonColor = false
+    Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
+    ApplyButtonInteraction(Track)
+
+    local Fill = Instance.new("Frame", Track)
+    Fill.Size = UDim2.new((defaultVal - minVal) / (maxVal - minVal), 0, 1, 0)
+    Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
+    addRainbow(Fill, "BackgroundColor3")
+
+    local function SetValue(val)
+        val = math.clamp(val, minVal, maxVal)
+        local pos = (val - minVal) / (maxVal - minVal)
+        TweenService:Create(Fill, TweenInfo.new(0.1), {Size = UDim2.new(pos, 0, 1, 0)}):Play()
+        ValText.Text = tostring(val)
+        callback(val)
+    end
+
+    local isDragging = false
+    Track.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDragging = true
+            local pos = math.clamp((input.Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
+            local val = math.floor(minVal + (maxVal - minVal) * pos)
+            SetValue(val)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDragging = false end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local pos = math.clamp((input.Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
+            local val = math.floor(minVal + (maxVal - minVal) * pos)
+            SetValue(val)
+        end
+    end)
+
+    return Container, SetValue
+end
+
+-- BUILDER BUTTON REGULER
+local function CreateButton(parent, text, layoutOrder)
+    local btn = Instance.new("TextButton", parent)
+    btn.LayoutOrder = layoutOrder
+    btn.Size = UDim2.new(1, -20, 0, 45)
+    btn.Text = text
+    btn.BackgroundColor3 = PanelColor
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.TextSize = 24
+    btn.Font = "PatrickHand"
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 12)
+    addRainbow(Instance.new("UIStroke", btn), "Color")
+    ApplyButtonInteraction(btn)
+    return btn
+end
+
+-- ================= TAB: EMOTE =================
+local EmoteTitle = Instance.new("TextLabel", EmotePage); EmoteTitle.LayoutOrder = 1; EmoteTitle.Size = UDim2.new(1,0,0,30); EmoteTitle.Text = "ANIMATION EMOTES"; EmoteTitle.TextColor3 = Color3.new(1,1,1); EmoteTitle.TextSize = 28; EmoteTitle.Font = "PatrickHand"; EmoteTitle.BackgroundTransparency = 1
+
+local DanceContainer, DanceBtn
+local PoseContainer, PoseBtn
+local PlayStopEmoteBtn = CreateButton(EmotePage, "play emote", 4)
+
+-- FUNGSI KHUSUS UNTUK PLAY EMOTE
+local function PlayEmote(emoteId)
+    if not LocalPlayer.Character then return end
+    local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+
+    local animator = hum:FindFirstChildOfClass("Animator") or Instance.new("Animator", hum)
+    
+    if currentEmoteTrack then 
+        currentEmoteTrack:Stop() 
+        currentEmoteTrack = nil
+    end 
+    
+    PlayStopEmoteBtn.Text = "loading..."
+    
+    task.spawn(function()
+        local cleanId = string.gsub(emoteId, "rbxassetid://", "")
+        local rawId = emoteId
+
+        local successGet, objects = pcall(function() return game:GetObjects("rbxassetid://" .. cleanId) end)
+        if successGet and objects and objects[1] then
+            local asset = objects[1]
+            if asset:IsA("Animation") then
+                rawId = asset.AnimationId
+            else
+                local animNode = asset:FindFirstChildWhichIsA("Animation", true)
+                if animNode then rawId = animNode.AnimationId end
+            end
+            asset:Destroy()
+        end
+
+        local anim = Instance.new("Animation")
+        anim.AnimationId = rawId
+        
+        local successLoad, track = pcall(function() return animator:LoadAnimation(anim) end)
+        
+        if successLoad and track then
+            currentEmoteTrack = track
+            currentEmoteTrack.Looped = true 
+            currentEmoteTrack:Play()
+            currentEmoteTrack:AdjustSpeed(emoteSpeedMultiplier) 
+            
+            PlayStopEmoteBtn.Text = "stop emote"
+            PlayStopEmoteBtn.TextColor3 = Color3.new(1, 0.3, 0.3)
+        else
+            PlayStopEmoteBtn.Text = "failed!"
+            task.delay(1.5, function() 
+                if not currentEmoteTrack then
+                    PlayStopEmoteBtn.Text = "play emote" 
+                    PlayStopEmoteBtn.TextColor3 = Color3.new(1,1,1)
+                end
+            end)
+        end
+    end)
+end
+
+-- BINDING KE DROPDOWN DANCE
+DanceContainer, DanceBtn = CreateSearchableDropdown(EmotePage, "select dance", 2, DancesData, function(val) 
+    selectedEmoteId = val 
+    if PoseBtn then PoseBtn.Text = "select pose" end 
+    if currentEmoteTrack and currentEmoteTrack.IsPlaying then
+        PlayEmote(selectedEmoteId)
+    end
+end)
+
+-- BINDING KE DROPDOWN POSE
+PoseContainer, PoseBtn = CreateSearchableDropdown(EmotePage, "select pose", 3, PosesData, function(val) 
+    selectedEmoteId = val 
+    if DanceBtn then DanceBtn.Text = "select dance" end 
+    if currentEmoteTrack and currentEmoteTrack.IsPlaying then
+        PlayEmote(selectedEmoteId)
+    end
+end)
+
+-- BINDING KE TOMBOL PLAY/STOP
+PlayStopEmoteBtn.MouseButton1Click:Connect(function()
+    if currentEmoteTrack and currentEmoteTrack.IsPlaying then
+        currentEmoteTrack:Stop()
+        currentEmoteTrack = nil
+        PlayStopEmoteBtn.Text = "play emote"
+        PlayStopEmoteBtn.TextColor3 = Color3.new(1,1,1)
+        return
+    end
+
+    if selectedEmoteId then
+        PlayEmote(selectedEmoteId)
+    end
+end)
+
+-- SLIDER KECEPATAN ANIMASI
+local _, SetEmoteSpeed = CreateSlider(EmotePage, "SPEED (%)", 10, 500, 100, 5, function(val)
+    emoteSpeedMultiplier = val / 100
+    if currentEmoteTrack and currentEmoteTrack.IsPlaying then
+        currentEmoteTrack:AdjustSpeed(emoteSpeedMultiplier)
+    end
+end)
+
+local EmoteNote = Instance.new("TextLabel", EmotePage); EmoteNote.LayoutOrder = 6; EmoteNote.Size = UDim2.new(1,0,0,30); EmoteNote.Text = "*Click stop to cancel emote"; EmoteNote.TextColor3 = Color3.fromRGB(150,150,150); EmoteNote.TextSize = 18; EmoteNote.Font = "PatrickHand"; EmoteNote.BackgroundTransparency = 1
+
+-- ================= TAB: MISC =================
+-- 1. WALK SPEED
+local _, SetWalkSlider = CreateSlider(MiscPage, "WALK SPEED", 16, 500, 16, 1, function(val) targetWalkSpeed = val end)
+local WsRe = CreateButton(MiscPage, "reset walk speed", 2)
+WsRe.MouseButton1Click:Connect(function() SetWalkSlider(16) end)
+
+local SepW = Instance.new("Frame", MiscPage); SepW.LayoutOrder = 3; SepW.Size = UDim2.new(1, 0, 0, 2); SepW.BorderSizePixel = 0
+addRainbow(SepW, "BackgroundColor3")
+
+-- 2. FLY SPEED & FLY BUTTON
+local _, SetFlySlider = CreateSlider(MiscPage, "FLY SPEED", 1, 500, 10, 4, function(val) flySpeed = val end)
+
+local FlyBtn = CreateButton(MiscPage, "button fly: off", 5)
+FlyBtn.MouseButton1Click:Connect(function()
+    isFlying = not isFlying
+    FlyBtn.Text = isFlying and "button fly: on" or "button fly: off"
+    FlyBtn.TextColor3 = isFlying and Color3.new(0,1,0) or Color3.new(1,1,1)
+    
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not char or not hum or not root then return end
+    
+    if isFlying then
+        if char:FindFirstChild("Animate") then char.Animate.Disabled = true end
+        for _, track in pairs(hum:GetPlayingAnimationTracks()) do track:Stop() end
+        hum:ChangeState(Enum.HumanoidStateType.Swimming)
+        
+        local bv = Instance.new("BodyVelocity", root); bv.Name = "FlyStable"; bv.MaxForce = Vector3.new(1e6, 1e6, 1e6); bv.Velocity = Vector3.new(0, 0, 0)
+        local bg = Instance.new("BodyGyro", root); bg.Name = "FlyGyro"; bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9); bg.P = 9e4; bg.CFrame = Camera.CFrame
+
+        if flyConnection then flyConnection:Disconnect() end
+        flyConnection = RunService.Heartbeat:Connect(function()
+            if not char or not root or not hum then return end
+            bg.CFrame = Camera.CFrame
+            if hum.MoveDirection.Magnitude > 0 then
+                local moveDir = hum.MoveDirection
+                local camLook = Camera.CFrame.LookVector
+                local yMove = 0
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) or moveDir:Dot(Camera.CFrame.LookVector) > 0.5 then yMove = camLook.Y
+                elseif UserInputService:IsKeyDown(Enum.KeyCode.S) or moveDir:Dot(Camera.CFrame.LookVector) < -0.5 then yMove = -camLook.Y end
+                char:TranslateBy(Vector3.new(moveDir.X, yMove, moveDir.Z) * (flySpeed / 10))
+            end
+        end)
+    else
+        if flyConnection then flyConnection:Disconnect() end
+        if root:FindFirstChild("FlyStable") then root.FlyStable:Destroy() end
+        if root:FindFirstChild("FlyGyro") then root.FlyGyro:Destroy() end 
+        if char:FindFirstChild("Animate") then char.Animate.Disabled = false end
+        hum:ChangeState(Enum.HumanoidStateType.Running)
+    end
+end)
+
+local SepW2 = Instance.new("Frame", MiscPage); SepW2.LayoutOrder = 6; SepW2.Size = UDim2.new(1, 0, 0, 2); SepW2.BorderSizePixel = 0
+addRainbow(SepW2, "BackgroundColor3")
+
+-- 3. MAX ZOOM
+local defaultZoom = math.clamp(LocalPlayer.CameraMaxZoomDistance, 10, 200)
+local _, SetZoomSlider = CreateSlider(MiscPage, "MAX ZOOM", 10, 200, defaultZoom, 7, function(val)
+    LocalPlayer.CameraMaxZoomDistance = val
+end)
+
+
+-- ================= TAB: TELEPORT =================
+local TeleportTitle = Instance.new("TextLabel", TeleportPage); TeleportTitle.LayoutOrder = 1; TeleportTitle.Size = UDim2.new(1,0,0,30); TeleportTitle.Text = "TELEPORT TO PLAYER"; TeleportTitle.TextColor3 = Color3.new(1,1,1); TeleportTitle.TextSize = 28; TeleportTitle.Font = "PatrickHand"; TeleportTitle.BackgroundTransparency = 1
+
+local targetPlayerName = nil
+
+local function GetActivePlayers()
+    local dict = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            dict[p.Name .. " (@" .. p.DisplayName .. ")"] = p.Name
+        end
+    end
+    return dict
+end
+
+local TpContainer, TpDropBtn, RefreshTpList
+
+-- Fungsi mematikan auto follow (untuk safety refresh dll)
+local function DisableFollow()
+    isFollowing = false
+    local followBtn = TeleportPage:FindFirstChild("FollowButtonNode")
+    if followBtn then
+        followBtn.Text = "auto follow: off"
+        followBtn.TextColor3 = Color3.new(1,1,1)
+    end
+    if followConnection then followConnection:Disconnect(); followConnection = nil end
+    local myChar = LocalPlayer.Character
+    local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+    if myHum and myChar.PrimaryPart then
+        myHum:MoveTo(myChar.PrimaryPart.Position) -- Stop berjalan
+    end
+end
+
+TpContainer, TpDropBtn, RefreshTpList = CreateSearchableDropdown(TeleportPage, "select player", 2, GetActivePlayers(), function(val)
+    targetPlayerName = val
+    DisableFollow() -- Reset follow setiap ganti target
+end)
+
+local RefreshListBtn = CreateButton(TeleportPage, "refresh list", 3)
+RefreshListBtn.MouseButton1Click:Connect(function()
+    RefreshTpList(GetActivePlayers())
+    TpDropBtn.Text = "select player"
+    targetPlayerName = nil
+    DisableFollow()
+end)
+
+local ExecuteTpBtn = CreateButton(TeleportPage, "teleport", 4)
+ExecuteTpBtn.MouseButton1Click:Connect(function()
+    if targetPlayerName then
+        local targetPlayer = Players:FindFirstChild(targetPlayerName)
+        if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local myChar = LocalPlayer.Character
+            if myChar and myChar:FindFirstChild("HumanoidRootPart") then
+                myChar.HumanoidRootPart.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
+            end
+        end
+    end
+end)
+
+-- AUTO FOLLOW BUTTON
+local FollowBtn = CreateButton(TeleportPage, "auto follow: off", 5)
+FollowBtn.Name = "FollowButtonNode"
+FollowBtn.MouseButton1Click:Connect(function()
+    if not targetPlayerName then return end -- Ga bisa follow kalau blm milih target
+
+    isFollowing = not isFollowing
+    FollowBtn.Text = isFollowing and "auto follow: on" or "auto follow: off"
+    FollowBtn.TextColor3 = isFollowing and Color3.new(0,1,0) or Color3.new(1,1,1)
+
+    if isFollowing then
+        if followConnection then followConnection:Disconnect() end
+        followConnection = RunService.Heartbeat:Connect(function()
+            if not isFollowing then return end
+            if targetPlayerName then
+                local targetPlayer = Players:FindFirstChild(targetPlayerName)
+                if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    local myChar = LocalPlayer.Character
+                    local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+                    if myHum and myHum.Health > 0 then
+                        myHum:MoveTo(targetPlayer.Character.HumanoidRootPart.Position)
+                    end
+                else
+                    -- Jika player leave, auto matikan follow
+                    DisableFollow()
+                    TpDropBtn.Text = "select player"
+                    targetPlayerName = nil
+                end
+            end
+        end)
+    else
+        DisableFollow()
+    end
+end)
+
+local TeleportNote = Instance.new("TextLabel", TeleportPage); TeleportNote.LayoutOrder = 6; TeleportNote.Size = UDim2.new(1,0,0,30); TeleportNote.Text = "*Must select a player to use Follow"; TeleportNote.TextColor3 = Color3.fromRGB(150,150,150); TeleportNote.TextSize = 18; TeleportNote.Font = "PatrickHand"; TeleportNote.BackgroundTransparency = 1
+
+
+-- ================= TAB: INFO =================
+local function AddInfo(t, o)
+    local l = Instance.new("TextLabel", InfoPage); l.LayoutOrder = o; l.Size = UDim2.new(1, -20, 0, 40); l.BackgroundTransparency = 1; l.Text = t; l.TextColor3 = Color3.new(1,1,1); l.TextSize = 22; l.Font = "PatrickHand"
+end
+AddInfo("Developer: Tio sc", 1); AddInfo("Version: V1 Micro", 2); AddInfo("Status: Stable", 3)
+
+-- NAVIGATION & TOGGLE
+local function SetPage(p)
+    EmotePage.Visible = (p=="Emote"); MiscPage.Visible = (p=="Misc"); TeleportPage.Visible = (p=="Teleport"); InfoPage.Visible = (p=="Info")
+    EmoteLine.Visible = EmotePage.Visible; MiscLine.Visible = MiscPage.Visible; TeleportLine.Visible = TeleportPage.Visible; InfoLine.Visible = InfoPage.Visible
+end
+EmoteTab.MouseButton1Click:Connect(function() SetPage("Emote") end)
+MiscTab.MouseButton1Click:Connect(function() SetPage("Misc") end)
+TeleportTab.MouseButton1Click:Connect(function() SetPage("Teleport") end)
+InfoTab.MouseButton1Click:Connect(function() SetPage("Info") end)
+
+FloatingIcon.MouseButton1Click:Connect(function()
+    if isGuiOpen then isGuiOpen = false; local t = TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(0,0,0,0)}); t:Play(); t.Completed:Connect(function() if not isGuiOpen then MainFrame.Visible = false end end)
+    else isGuiOpen = true; MainFrame.Visible = true; TweenService:Create(MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 520, 0, 340)}):Play() end
+end)
+CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+SetPage("Emote")
+
+-- ================= FORCE LOOP CORE =================
+RunService.Heartbeat:Connect(function()
+    pcall(function()
+        -- Efek Rainbow RGB Berjalan
+        local hue = (tick() * 0.1) % 1 
+        local rainbowColor = Color3.fromHSV(hue, 1, 1)
+        for _, item in ipairs(rainbowElements) do
+            if item.obj and item.obj.Parent then item.obj[item.prop] = rainbowColor end
+        end
+        
+        -- Logika Animasi Teks Berjalan
+        if MarqueeText and MarqueeText.Parent then
+            local speed = 0.002 
+            local newPos = MarqueeText.Position.X.Scale - speed
+            if newPos <= -1 then newPos = 1 end
+            MarqueeText.Position = UDim2.new(newPos, 0, 0, 0)
+        end
+        
+        -- Force WalkSpeed
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.WalkSpeed = targetWalkSpeed
+        end
+    end)
+end)

@@ -1,0 +1,746 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- KONFIGURASI TEMA WARNA
+local NeonColor = Color3.fromRGB(180, 0, 255)
+local PlayerEspColor = Color3.fromRGB(0, 255, 255)  
+local KillerEspColor = Color3.fromRGB(255, 0, 0)   
+local GeneratorEspColor = Color3.fromRGB(255, 255, 0) 
+local PalletEspColor = Color3.fromRGB(255, 128, 0) 
+local HookEspColor = Color3.fromRGB(255, 105, 180) 
+local GateEspColor = Color3.fromRGB(50, 255, 50) 
+local BGColor = Color3.fromRGB(10, 5, 15)
+local PanelColor = Color3.fromRGB(25, 15, 30)
+
+-- STATE GLOBAL
+local flySpeed = 10
+local currentWalkSpeed = 16 
+local isFlying, isNoclip, isGuiOpen = false, false, false
+local isPlayerEspActive, isKillerEspActive = false, false
+local isGeneratorEspActive, isPalletEspActive, isHookEspActive = false, false, false
+local isAutoGenActive = false 
+local currentAutoGenTarget = nil
+local activeDropdownClose = nil
+local flyConnection = nil 
+
+-- STATE TOOLS (CROSSHAIR)
+local isCrosshairOn = false
+local selectedCrosshairType = "Dot" 
+local crosshairColor = Color3.new(0, 1, 0) 
+local crosshairSize = 6 
+local crosshairUI = nil
+
+-- STATE TELEPORT
+local currentPlayerTarget = nil
+local currentHookTarget = nil
+local currentGateTarget = nil
+local currentGenerator = nil
+
+local activeGenerators = {}
+local activePallets = {}
+local activeHooks = {}
+local activeGates = {}
+
+-- SCAN MAP OBJECTS
+local function scanMapObjects()
+    table.clear(activeGenerators)
+    table.clear(activePallets)
+    table.clear(activeHooks)
+    table.clear(activeGates)
+    
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Model") or v:IsA("BasePart") then
+            local name = string.lower(v.Name)
+            if name == "generator" and v:IsA("Model") then
+                table.insert(activeGenerators, v)
+            elseif string.find(name, "pallet") then
+                table.insert(activePallets, v)
+            elseif name == "hook" and v:IsA("Model") and v:FindFirstChild("HookPoint") then
+                table.insert(activeHooks, v)
+            elseif name == "gate" and v:IsA("Model") then
+                table.insert(activeGates, v)
+            end
+        end
+    end
+end
+
+-- PENGECEKAN TIM KILLER
+local function isPlayerKiller(p)
+    if p.Team then
+        local tName = string.lower(p.Team.Name)
+        if string.find(tName, "red") or string.find(tName, "merah") or string.find(tName, "killer") then
+            return true
+        end
+        if p.TeamColor == BrickColor.new("Bright red") or p.TeamColor == BrickColor.new("Really red") then
+            return true
+        end
+    end
+    return false
+end
+
+-- TABEL UNTUK EFEK RAINBOW RGB
+local rainbowElements = {}
+local function addRainbow(element, property)
+    table.insert(rainbowElements, {obj = element, prop = property})
+end
+
+-- ANIMASI TOMBOL INTERAKTIF
+local function ApplyButtonInteraction(btn)
+    if not btn:IsA("GuiObject") then return end
+    local scale = Instance.new("UIScale", btn)
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            TweenService:Create(scale, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 0.92}):Play()
+        end
+    end)
+    btn.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            TweenService:Create(scale, TweenInfo.new(0.25, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out), {Scale = 1}):Play()
+        end
+    end)
+end
+
+-- GUI BASE
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "DeltaPro_Lite"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.IgnoreGuiInset = true 
+pcall(function() ScreenGui.Parent = CoreGui end)
+
+-- UNIVERSAL DRAG LOGIC
+local function MakeDraggable(obj)
+    local dragging, dragInput, dragStart, startPos
+    obj.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true; dragStart = input.Position; startPos = obj.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            obj.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+-- ICON FLOATING
+local FloatingIcon = Instance.new("TextButton", ScreenGui)
+FloatingIcon.Size = UDim2.new(0, 60, 0, 60); FloatingIcon.Position = UDim2.new(0, 20, 0, 20)
+FloatingIcon.BackgroundColor3 = BGColor; FloatingIcon.Text = "T"; FloatingIcon.TextColor3 = Color3.new(1,1,1)
+FloatingIcon.TextSize = 35; FloatingIcon.Font = Enum.Font.FredokaOne; FloatingIcon.ZIndex = 1000
+MakeDraggable(FloatingIcon); ApplyButtonInteraction(FloatingIcon)
+Instance.new("UICorner", FloatingIcon).CornerRadius = UDim.new(1, 0)
+addRainbow(Instance.new("UIStroke", FloatingIcon), "Color")
+
+-- FRAME UTAMA
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 520, 0, 340); MainFrame.Position = UDim2.new(0.5, -260, 0.5, -170)
+MainFrame.BackgroundColor3 = BGColor; MainFrame.Visible = false; MainFrame.Active = true; MainFrame.ClipsDescendants = true
+MakeDraggable(MainFrame)
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 15)
+addRainbow(Instance.new("UIStroke", MainFrame), "Color")
+
+-- HEADER
+local Header = Instance.new("Frame", MainFrame); Header.Size = UDim2.new(1, 0, 0, 50); Header.BackgroundTransparency = 1
+local Title = Instance.new("TextLabel", Header); Title.Size = UDim2.new(1, -60, 1, -15); Title.Position = UDim2.new(0, 20, 0, 0); Title.Text = "Violence District"; Title.TextColor3 = Color3.new(1,1,1); Title.TextSize = 26; Title.Font = "PatrickHand"; Title.BackgroundTransparency = 1; Title.TextXAlignment = "Left"
+
+local MarqueeFrame = Instance.new("Frame", Header)
+MarqueeFrame.Size = UDim2.new(1, -60, 0, 15); MarqueeFrame.Position = UDim2.new(0, 20, 0, 30); MarqueeFrame.BackgroundTransparency = 1; MarqueeFrame.ClipsDescendants = true
+local MarqueeText = Instance.new("TextLabel", MarqueeFrame)
+MarqueeText.Size = UDim2.new(2, 0, 1, 0); MarqueeText.Position = UDim2.new(0, 0, 0, 0); MarqueeText.BackgroundTransparency = 1
+MarqueeText.Text = "[ VIP V32 ] | [ Auto Gen, ESP Optimized, Gate, Fly, Speed, Noclip ]" 
+MarqueeText.TextColor3 = Color3.new(1,1,1); MarqueeText.TextSize = 14 
+MarqueeText.Font = "FredokaOne"; MarqueeText.TextXAlignment = "Left"
+addRainbow(MarqueeText, "TextColor3") 
+
+local HeaderLine = Instance.new("Frame", Header); HeaderLine.Size = UDim2.new(1, 0, 0, 2); HeaderLine.Position = UDim2.new(0, 0, 1, 0); HeaderLine.BorderSizePixel = 0
+addRainbow(HeaderLine, "BackgroundColor3") 
+
+local CloseBtn = Instance.new("TextButton", Header); CloseBtn.Size = UDim2.new(0, 40, 0, 40); CloseBtn.Position = UDim2.new(1, -50, 0, 8); CloseBtn.Text = "X"; CloseBtn.TextColor3 = Color3.fromRGB(255, 60, 60); CloseBtn.TextSize = 35; CloseBtn.Font = "FredokaOne"; CloseBtn.BackgroundTransparency = 1
+ApplyButtonInteraction(CloseBtn)
+
+-- SIDEBAR 
+local Sidebar = Instance.new("Frame", MainFrame); Sidebar.Size = UDim2.new(0, 125, 1, -55); Sidebar.Position = UDim2.new(0, 0, 0, 55); Sidebar.BackgroundTransparency = 1
+local SidebarLine = Instance.new("Frame", Sidebar); SidebarLine.Size = UDim2.new(0, 2, 1, 0); SidebarLine.Position = UDim2.new(1, 0, 0, 0); SidebarLine.BorderSizePixel = 0
+addRainbow(SidebarLine, "BackgroundColor3") 
+
+local function CreateTab(name, pos)
+    local Tab = Instance.new("TextButton", Sidebar); Tab.Size = UDim2.new(1, -10, 0, 45); Tab.Position = UDim2.new(0, 10, 0, pos); Tab.Text = name; Tab.TextColor3 = Color3.fromRGB(200, 200, 200); Tab.TextSize = 24; Tab.Font = "PatrickHand"; Tab.BackgroundTransparency = 1; Tab.TextXAlignment = "Left"
+    local L = Instance.new("Frame", Tab); L.Size = UDim2.new(0, 4, 0.7, 0); L.Position = UDim2.new(0, -10, 0.15, 0); L.Visible = false
+    addRainbow(L, "BackgroundColor3") 
+    ApplyButtonInteraction(Tab)
+    return Tab, L
+end
+
+local TeleTab, TeleLine = CreateTab("teleport", 15)
+local ToolsTab, ToolsLine = CreateTab("tools", 65)
+local MiscTab, MiscLine = CreateTab("misc", 115)
+local InfoTab, InfoLine = CreateTab("info", 165)
+
+-- CONTENT AREA
+local ContentArea = Instance.new("Frame", MainFrame); ContentArea.Size = UDim2.new(1, -135, 1, -65); ContentArea.Position = UDim2.new(0, 135, 0, 60); ContentArea.BackgroundTransparency = 1
+
+local function CreatePage()
+    local Page = Instance.new("ScrollingFrame", ContentArea); Page.Size = UDim2.new(1, 0, 1, 0); Page.BackgroundTransparency = 1; Page.Visible = false; Page.ScrollBarThickness = 2; Page.AutomaticCanvasSize = Enum.AutomaticSize.Y; Page.Active = true; Page.ScrollingDirection = Enum.ScrollingDirection.Y
+    local L = Instance.new("UIListLayout", Page); L.Padding = UDim.new(0, 15); L.HorizontalAlignment = "Center"; L.SortOrder = "LayoutOrder"
+    Instance.new("UIPadding", Page).PaddingTop = UDim.new(0, 15); Instance.new("UIPadding", Page).PaddingBottom = UDim.new(0, 15)
+    return Page
+end
+local TelePage = CreatePage(); local ToolsPage = CreatePage(); local MiscPage = CreatePage(); local InfoPage = CreatePage()
+
+-- SISTEM DROPDOWN
+local function CreateDropdown(parent, placeholder, order, options_func, callback)
+    local Container = Instance.new("Frame", parent); Container.Size = UDim2.new(1, -25, 0, 45); Container.BackgroundTransparency = 1; Container.LayoutOrder = order
+    local MainBtn = Instance.new("TextButton", Container); MainBtn.Size = UDim2.new(1, 0, 0, 45); MainBtn.BackgroundColor3 = PanelColor; MainBtn.Text = placeholder; MainBtn.TextColor3 = Color3.new(1,1,1); MainBtn.TextSize = 24; MainBtn.Font = "PatrickHand"
+    Instance.new("UICorner", MainBtn).CornerRadius = UDim.new(0, 10)
+    addRainbow(Instance.new("UIStroke", MainBtn), "Color")
+    ApplyButtonInteraction(MainBtn)
+
+    local List = Instance.new("ScrollingFrame", MainBtn)
+    List.Size = UDim2.new(1, 0, 0, 0); List.Position = UDim2.new(0, 0, 1, 5); List.BackgroundColor3 = PanelColor; List.Visible = false; List.ZIndex = 500; List.ScrollBarThickness = 4; List.Active = true; List.Selectable = true; List.ScrollingDirection = Enum.ScrollingDirection.Y; List.ClipsDescendants = true
+    Instance.new("UICorner", List).CornerRadius = UDim.new(0, 10); Instance.new("UIListLayout", List)
+
+    local function Toggle()
+        if List.Visible then
+            TweenService:Create(List, TweenInfo.new(0.3), {Size = UDim2.new(1,0,0,0)}):Play()
+            TweenService:Create(Container, TweenInfo.new(0.3), {Size = UDim2.new(1,-25,0,45)}):Play()
+            task.delay(0.3, function() List.Visible = false end); activeDropdownClose = nil
+        else
+            if activeDropdownClose then activeDropdownClose() end
+            List.Visible = true; local opts = options_func()
+            for _,v in pairs(List:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end
+            for _, opt in pairs(opts) do
+                local b = Instance.new("TextButton", List); b.Size = UDim2.new(1, 0, 0, 40); b.Text = tostring(opt); b.TextColor3 = Color3.new(1,1,1); b.TextSize = 22; b.Font = "PatrickHand"; b.BackgroundTransparency = 1
+                b.MouseButton1Click:Connect(function() MainBtn.Text = tostring(opt); Toggle(); callback(opt) end)
+                ApplyButtonInteraction(b)
+            end
+            local targetH = math.min(#opts * 40, 120); List.CanvasSize = UDim2.new(0,0,0, #opts * 40)
+            TweenService:Create(List, TweenInfo.new(0.3), {Size = UDim2.new(1,0,0,targetH)}):Play()
+            TweenService:Create(Container, TweenInfo.new(0.3), {Size = UDim2.new(1,-25,0,45 + targetH + 5)}):Play()
+            activeDropdownClose = Toggle
+        end
+    end
+    MainBtn.MouseButton1Click:Connect(Toggle)
+    return Container, MainBtn
+end
+
+-- SISTEM SLIDER
+local function CreateSlider(parent, titleText, minVal, maxVal, defaultVal, layoutOrder, callback)
+    local Container = Instance.new("Frame", parent)
+    Container.Size = UDim2.new(1, -20, 0, 65); Container.BackgroundTransparency = 1; Container.LayoutOrder = layoutOrder
+
+    local Title = Instance.new("TextLabel", Container)
+    Title.Size = UDim2.new(1, -50, 0, 25); Title.Position = UDim2.new(0,0,0,0)
+    Title.Text = titleText:upper(); Title.TextColor3 = Color3.new(1,1,1); Title.TextSize = 24; Title.Font = "PatrickHand"; Title.BackgroundTransparency = 1; Title.TextXAlignment = Enum.TextXAlignment.Left
+
+    local ValText = Instance.new("TextLabel", Container)
+    ValText.Size = UDim2.new(0, 50, 0, 25); ValText.Position = UDim2.new(1, -50, 0, 0)
+    ValText.Text = tostring(defaultVal); ValText.TextColor3 = Color3.new(1,1,1); ValText.TextSize = 24; ValText.Font = "PatrickHand"; ValText.BackgroundTransparency = 1; ValText.TextXAlignment = Enum.TextXAlignment.Right
+
+    local Track = Instance.new("TextButton", Container)
+    Track.Size = UDim2.new(1, 0, 0, 15); Track.Position = UDim2.new(0, 0, 0, 35); Track.BackgroundColor3 = PanelColor; Track.Text = ""; Track.AutoButtonColor = false
+    Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
+    ApplyButtonInteraction(Track)
+
+    local Fill = Instance.new("Frame", Track)
+    Fill.Size = UDim2.new((defaultVal - minVal) / (maxVal - minVal), 0, 1, 0)
+    Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
+    addRainbow(Fill, "BackgroundColor3")
+
+    local function SetValue(val)
+        val = math.clamp(val, minVal, maxVal)
+        local pos = (val - minVal) / (maxVal - minVal)
+        TweenService:Create(Fill, TweenInfo.new(0.1), {Size = UDim2.new(pos, 0, 1, 0)}):Play()
+        ValText.Text = tostring(val)
+        callback(val)
+    end
+
+    local isDragging = false
+    Track.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDragging = true
+            local pos = math.clamp((input.Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
+            local val = math.floor(minVal + (maxVal - minVal) * pos)
+            SetValue(val)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDragging = false end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local pos = math.clamp((input.Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
+            local val = math.floor(minVal + (maxVal - minVal) * pos)
+            SetValue(val)
+        end
+    end)
+
+    return Container, SetValue
+end
+
+-- BUILDER BUTTON
+local function CreateButton(parent, text, layoutOrder)
+    local btn = Instance.new("TextButton", parent)
+    btn.LayoutOrder = layoutOrder
+    btn.Size = UDim2.new(1, -20, 0, 45)
+    btn.Text = text
+    btn.BackgroundColor3 = PanelColor
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.TextSize = 24
+    btn.Font = "PatrickHand"
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 12)
+    addRainbow(Instance.new("UIStroke", btn), "Color")
+    ApplyButtonInteraction(btn)
+    return btn
+end
+
+-- ================= TAB: TELEPORT & AUTO GEN =================
+local AutoGenBtn = CreateButton(TelePage, "AUTO TELEPORT GEN: OFF", 1)
+AutoGenBtn.MouseButton1Click:Connect(function() 
+    isAutoGenActive = not isAutoGenActive
+    AutoGenBtn.Text = isAutoGenActive and "AUTO TELEPORT GEN: ON" or "AUTO TELEPORT GEN: OFF"
+    AutoGenBtn.TextColor3 = isAutoGenActive and Color3.new(0,1,0) or Color3.new(1,1,1)
+    if isAutoGenActive then scanMapObjects() end
+end)
+
+local SepA = Instance.new("Frame", TelePage); SepA.LayoutOrder = 2; SepA.Size = UDim2.new(1, 0, 0, 2); SepA.BorderSizePixel = 0
+addRainbow(SepA, "BackgroundColor3")
+
+-- MENU MANUAL TELEPORT GENERATOR 
+CreateDropdown(TelePage, "select generator", 3, function() 
+    local t = {}
+    scanMapObjects() 
+    for i, _ in ipairs(activeGenerators) do table.insert(t, "Generator " .. i) end
+    if #t == 0 then table.insert(t, "No Gen Found") end
+    return t 
+end, function(v) currentGenerator = v end)
+
+local TPGenBtn = CreateButton(TelePage, "teleport to generator", 4)
+TPGenBtn.MouseButton1Click:Connect(function() 
+    if currentGenerator and string.match(currentGenerator, "Generator %d+") then
+        local index = tonumber(string.match(currentGenerator, "%d+"))
+        local targetGen = activeGenerators[index]
+        if targetGen and LocalPlayer.Character then
+            LocalPlayer.Character:PivotTo(targetGen:GetPivot() * CFrame.new(0, 2, 8))
+        end
+    end
+end)
+
+local SepT = Instance.new("Frame", TelePage); SepT.LayoutOrder = 5; SepT.Size = UDim2.new(1, 0, 0, 2); SepT.BorderSizePixel = 0
+addRainbow(SepT, "BackgroundColor3")
+
+CreateDropdown(TelePage, "select player", 6, function() 
+    local t = {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then table.insert(t, p.Name) end
+    end
+    return t 
+end, function(v) currentPlayerTarget = v end)
+
+local TPPlayerBtn = CreateButton(TelePage, "teleport to player", 7)
+TPPlayerBtn.MouseButton1Click:Connect(function() 
+    if currentPlayerTarget then
+        local targetPlayer = Players:FindFirstChild(currentPlayerTarget)
+        if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character then
+            LocalPlayer.Character:PivotTo(targetPlayer.Character:GetPivot())
+        end
+    end
+end)
+
+local SepH = Instance.new("Frame", TelePage); SepH.LayoutOrder = 8; SepH.Size = UDim2.new(1, 0, 0, 2); SepH.BorderSizePixel = 0
+addRainbow(SepH, "BackgroundColor3")
+
+CreateDropdown(TelePage, "select hook (gantungan)", 9, function() 
+    local t = {}
+    scanMapObjects()
+    for i, v in ipairs(activeHooks) do table.insert(t, "Gantungan " .. i) end
+    if #t == 0 then table.insert(t, "No Hook Found") end
+    return t 
+end, function(v) currentHookTarget = v end)
+
+local TPHookBtn = CreateButton(TelePage, "teleport to hook", 10)
+TPHookBtn.MouseButton1Click:Connect(function() 
+    if currentHookTarget and string.match(currentHookTarget, "Gantungan %d+") then
+        local index = tonumber(string.match(currentHookTarget, "%d+"))
+        local targetHook = activeHooks[index]
+        if targetHook and LocalPlayer.Character then
+            local hookPoint = targetHook:FindFirstChild("HookPoint")
+            if hookPoint then LocalPlayer.Character:PivotTo(hookPoint:GetPivot())
+            else LocalPlayer.Character:PivotTo(targetHook:GetPivot()) end
+        end
+    end
+end)
+
+local SepG = Instance.new("Frame", TelePage); SepG.LayoutOrder = 11; SepG.Size = UDim2.new(1, 0, 0, 2); SepG.BorderSizePixel = 0
+addRainbow(SepG, "BackgroundColor3")
+
+CreateDropdown(TelePage, "select gate", 12, function() 
+    local t = {}
+    scanMapObjects()
+    for i, v in ipairs(activeGates) do table.insert(t, "Gate " .. i) end
+    if #t == 0 then table.insert(t, "No Gate Found") end
+    return t 
+end, function(v) currentGateTarget = v end)
+
+local TPGateBtn = CreateButton(TelePage, "teleport to gate", 13)
+TPGateBtn.MouseButton1Click:Connect(function() 
+    if currentGateTarget and string.match(currentGateTarget, "Gate %d+") then
+        local index = tonumber(string.match(currentGateTarget, "%d+"))
+        local targetGate = activeGates[index]
+        if targetGate and LocalPlayer.Character then
+            LocalPlayer.Character:PivotTo(targetGate:GetPivot() * CFrame.new(0, 0, 8))
+        end
+    end
+end)
+
+-- ================= TAB: TOOLS (CROSSHAIR) =================
+local ToolsTitle = Instance.new("TextLabel", ToolsPage); ToolsTitle.LayoutOrder = 1; ToolsTitle.Size = UDim2.new(1,0,0,30); ToolsTitle.Text = "TOOL FEATURES"; ToolsTitle.TextColor3 = Color3.new(1,1,1); ToolsTitle.TextSize = 28; ToolsTitle.Font = "PatrickHand"; ToolsTitle.BackgroundTransparency = 1
+
+local function UpdateCrosshair()
+    if crosshairUI then crosshairUI:Destroy() end
+    if not isCrosshairOn then return end
+    crosshairUI = Instance.new("Frame", ScreenGui)
+    crosshairUI.Name = "CustomCrosshair"; crosshairUI.AnchorPoint = Vector2.new(0.5, 0.5); crosshairUI.Position = UDim2.new(0.5, 0, 0.5, 0); crosshairUI.Size = UDim2.new(0, 0, 0, 0); crosshairUI.BackgroundTransparency = 1
+    if selectedCrosshairType == "Dot" then
+        local dot = Instance.new("Frame", crosshairUI); dot.AnchorPoint = Vector2.new(0.5, 0.5); dot.Size = UDim2.new(0, crosshairSize, 0, crosshairSize); dot.Position = UDim2.new(0.5, 0, 0.5, 0); dot.BackgroundColor3 = crosshairColor; Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+    elseif selectedCrosshairType == "Cross" then
+        local length = crosshairSize * 3; local thickness = math.max(1, math.floor(crosshairSize / 3))
+        local h = Instance.new("Frame", crosshairUI); h.AnchorPoint = Vector2.new(0.5, 0.5); h.Size = UDim2.new(0, length, 0, thickness); h.Position = UDim2.new(0.5, 0, 0.5, 0); h.BackgroundColor3 = crosshairColor
+        local v = Instance.new("Frame", crosshairUI); v.AnchorPoint = Vector2.new(0.5, 0.5); v.Size = UDim2.new(0, thickness, 0, length); v.Position = UDim2.new(0.5, 0, 0.5, 0); v.BackgroundColor3 = crosshairColor
+    elseif selectedCrosshairType == "Circle" then
+        local circSize = crosshairSize * 2
+        local circ = Instance.new("Frame", crosshairUI); circ.AnchorPoint = Vector2.new(0.5, 0.5); circ.Size = UDim2.new(0, circSize, 0, circSize); circ.Position = UDim2.new(0.5, 0, 0.5, 0); circ.BackgroundTransparency = 1
+        local stroke = Instance.new("UIStroke", circ); stroke.Color = crosshairColor; stroke.Thickness = 2; Instance.new("UICorner", circ).CornerRadius = UDim.new(1, 0)
+    end
+end
+
+CreateDropdown(ToolsPage, "[type] crosshair", 2, function() return {"Dot", "Cross", "Circle"} end, function(v) selectedCrosshairType = v; UpdateCrosshair() end)
+local _, SetCrossSize = CreateSlider(ToolsPage, "CROSSHAIR SIZE", 2, 30, 6, 3, function(val) crosshairSize = val; UpdateCrosshair() end)
+local CrossColorOptions = { ["Green"]=Color3.new(0,1,0), ["Red"]=Color3.new(1,0,0), ["Blue"]=Color3.new(0,0,1), ["White"]=Color3.new(1,1,1), ["Black"]=Color3.new(0,0,0), ["Yellow"]=Color3.new(1,1,0), ["Cyan"]=Color3.new(0,1,1), ["Magenta"]=Color3.new(1,0,1) }
+CreateDropdown(ToolsPage, "[color] crosshair", 4, function() local t = {}; for k,_ in pairs(CrossColorOptions) do table.insert(t, k) end; return t end, function(v) if CrossColorOptions[v] then crosshairColor = CrossColorOptions[v]; UpdateCrosshair() end end)
+local CrossToggleBtn = CreateButton(ToolsPage, "crosshair: off", 5); CrossToggleBtn.MouseButton1Click:Connect(function() isCrosshairOn = not isCrosshairOn; CrossToggleBtn.Text = isCrosshairOn and "crosshair: on" or "crosshair: off"; CrossToggleBtn.TextColor3 = isCrosshairOn and Color3.new(0,1,0) or Color3.new(1,1,1); UpdateCrosshair() end)
+
+-- ================= FUNGSI PEMBERSIHAN (CLEANUP) ESP =================
+local function ClearESP(tipe)
+    if tipe == "Player" then
+        for _, p in pairs(Players:GetPlayers()) do
+            if p.Character then
+                if p.Character:FindFirstChild("PEH") then p.Character.PEH:Destroy() end
+                if p.Character:FindFirstChild("PE_Text") then p.Character.PE_Text:Destroy() end
+            end
+        end
+    elseif tipe == "Killer" then
+        for _, p in pairs(Players:GetPlayers()) do
+            if p.Character then
+                if p.Character:FindFirstChild("KEH") then p.Character.KEH:Destroy() end
+                if p.Character:FindFirstChild("KE_Text") then p.Character.KE_Text:Destroy() end
+            end
+        end
+    elseif tipe == "Generator" then
+        for _, v in pairs(activeGenerators) do
+            if v and v:FindFirstChild("GEH") then v.GEH:Destroy() end
+        end
+    elseif tipe == "Pallet" then
+        for _, v in pairs(activePallets) do
+            if v and v:FindFirstChild("PalletEH") then v.PalletEH:Destroy() end
+        end
+    elseif tipe == "Hook" then
+        for _, v in pairs(activeHooks) do
+            if v and v:FindFirstChild("HookEH") then v.HookEH:Destroy() end
+            if v and v:FindFirstChild("HookE_Text") then v.HookE_Text:Destroy() end
+        end
+    end
+end
+
+-- ================= TAB: MISC =================
+local _, SetBrightSlider = CreateSlider(MiscPage, "BRIGHTNESS", 1, 500, 1, 1, function(val) Lighting.Brightness = val end)
+local BrRe = CreateButton(MiscPage, "reset brightness", 2); BrRe.MouseButton1Click:Connect(function() SetBrightSlider(1) end)
+
+local SepB = Instance.new("Frame", MiscPage); SepB.LayoutOrder = 3; SepB.Size = UDim2.new(1, 0, 0, 2); SepB.BorderSizePixel = 0
+addRainbow(SepB, "BackgroundColor3")
+
+local _, SetWalkSlider = CreateSlider(MiscPage, "WALK SPEED", 16, 300, 16, 4, function(val) 
+    currentWalkSpeed = val 
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = currentWalkSpeed
+    end
+end)
+
+local SepW = Instance.new("Frame", MiscPage); SepW.LayoutOrder = 5; SepW.Size = UDim2.new(1, 0, 0, 2); SepW.BorderSizePixel = 0
+addRainbow(SepW, "BackgroundColor3")
+
+local _, SetFlySlider = CreateSlider(MiscPage, "FLY SPEED", 1, 500, 10, 6, function(val) flySpeed = val end)
+local FlyBtn = CreateButton(MiscPage, "button fly: off", 7)
+FlyBtn.MouseButton1Click:Connect(function()
+    isFlying = not isFlying; FlyBtn.Text = isFlying and "button fly: on" or "button fly: off"; FlyBtn.TextColor3 = isFlying and Color3.new(0,1,0) or Color3.new(1,1,1)
+    local char = LocalPlayer.Character; local hum = char and char:FindFirstChildOfClass("Humanoid"); local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not char or not hum or not root then return end
+    if isFlying then
+        if char:FindFirstChild("Animate") then char.Animate.Disabled = true end
+        for _, track in pairs(hum:GetPlayingAnimationTracks()) do track:Stop() end
+        hum:ChangeState(Enum.HumanoidStateType.Swimming)
+        local bv = Instance.new("BodyVelocity", root); bv.Name = "FlyStable"; bv.MaxForce = Vector3.new(1e6, 1e6, 1e6); bv.Velocity = Vector3.new(0, 0, 0)
+        local bg = Instance.new("BodyGyro", root); bg.Name = "FlyGyro"; bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9); bg.P = 9e4; bg.CFrame = Camera.CFrame
+        if flyConnection then flyConnection:Disconnect() end
+        flyConnection = RunService.Heartbeat:Connect(function()
+            if not char or not root or not hum then return end
+            bg.CFrame = Camera.CFrame
+            if hum.MoveDirection.Magnitude > 0 then
+                local moveDir = hum.MoveDirection; local camLook = Camera.CFrame.LookVector; local yMove = 0
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) or moveDir:Dot(Camera.CFrame.LookVector) > 0.5 then yMove = camLook.Y
+                elseif UserInputService:IsKeyDown(Enum.KeyCode.S) or moveDir:Dot(Camera.CFrame.LookVector) < -0.5 then yMove = -camLook.Y end
+                char:TranslateBy(Vector3.new(moveDir.X, yMove, moveDir.Z) * (flySpeed / 10))
+            end
+        end)
+    else
+        if flyConnection then flyConnection:Disconnect() end
+        if root:FindFirstChild("FlyStable") then root.FlyStable:Destroy() end
+        if root:FindFirstChild("FlyGyro") then root.FlyGyro:Destroy() end 
+        if char:FindFirstChild("Animate") then char.Animate.Disabled = false end
+        hum:ChangeState(Enum.HumanoidStateType.Running)
+    end
+end)
+
+local NcBtn = CreateButton(MiscPage, "noclip: off", 8); NcBtn.MouseButton1Click:Connect(function() isNoclip = not isNoclip; NcBtn.Text = isNoclip and "noclip: on" or "noclip: off"; NcBtn.TextColor3 = isNoclip and Color3.new(0,1,0) or Color3.new(1,1,1) end)
+
+local SepM = Instance.new("Frame", MiscPage); SepM.LayoutOrder = 9; SepM.Size = UDim2.new(1, 0, 0, 2); SepM.BorderSizePixel = 0
+addRainbow(SepM, "BackgroundColor3")
+
+-- === TOMBOL ESP SEKARANG MENJALANKAN FUNGSI CLEANUP SAAT DIMATIKAN ===
+local PlayerEspBtn = CreateButton(MiscPage, "player esp: off", 10)
+PlayerEspBtn.MouseButton1Click:Connect(function() 
+    isPlayerEspActive = not isPlayerEspActive
+    PlayerEspBtn.Text = isPlayerEspActive and "player esp: on" or "player esp: off"
+    PlayerEspBtn.TextColor3 = isPlayerEspActive and Color3.new(0,1,0) or Color3.new(1,1,1)
+    if not isPlayerEspActive then ClearESP("Player") end
+end)
+
+local KillerEspBtn = CreateButton(MiscPage, "killer esp: off", 11)
+KillerEspBtn.MouseButton1Click:Connect(function() 
+    isKillerEspActive = not isKillerEspActive
+    KillerEspBtn.Text = isKillerEspActive and "killer esp: on" or "killer esp: off"
+    KillerEspBtn.TextColor3 = isKillerEspActive and Color3.new(0,1,0) or Color3.new(1,1,1)
+    if not isKillerEspActive then ClearESP("Killer") end
+end)
+
+local GenEspBtn = CreateButton(MiscPage, "generator esp: off", 12)
+GenEspBtn.MouseButton1Click:Connect(function() 
+    isGeneratorEspActive = not isGeneratorEspActive
+    GenEspBtn.Text = isGeneratorEspActive and "generator esp: on" or "generator esp: off"
+    GenEspBtn.TextColor3 = isGeneratorEspActive and Color3.new(0,1,0) or Color3.new(1,1,1)
+    if isGeneratorEspActive then scanMapObjects() else ClearESP("Generator") end 
+end)
+
+local PalletEspBtn = CreateButton(MiscPage, "pallet esp: off", 13)
+PalletEspBtn.MouseButton1Click:Connect(function() 
+    isPalletEspActive = not isPalletEspActive
+    PalletEspBtn.Text = isPalletEspActive and "pallet esp: on" or "pallet esp: off"
+    PalletEspBtn.TextColor3 = isPalletEspActive and Color3.new(0,1,0) or Color3.new(1,1,1)
+    if isPalletEspActive then scanMapObjects() else ClearESP("Pallet") end 
+end)
+
+local HookEspBtn = CreateButton(MiscPage, "hook esp: off", 14)
+HookEspBtn.MouseButton1Click:Connect(function() 
+    isHookEspActive = not isHookEspActive
+    HookEspBtn.Text = isHookEspActive and "hook esp: on" or "hook esp: off"
+    HookEspBtn.TextColor3 = isHookEspActive and Color3.new(0,1,0) or Color3.new(1,1,1)
+    if isHookEspActive then scanMapObjects() else ClearESP("Hook") end 
+end)
+
+-- ================= ESP LOGIC OPTIMIZED =================
+local function CreateOrUpdateEspText(parent, idName, color, textValue)
+    local billboard = parent:FindFirstChild(idName)
+    if not billboard then
+        billboard = Instance.new("BillboardGui", parent); billboard.Name = idName; billboard.AlwaysOnTop = true; billboard.Size = UDim2.new(0, 200, 0, 40); billboard.ExtentsOffset = Vector3.new(0, 3, 0)
+        local textLabel = Instance.new("TextLabel", billboard); textLabel.Name = "ESPLabel"; textLabel.Size = UDim2.new(1, 0, 1, 0); textLabel.BackgroundTransparency = 1; textLabel.Font = Enum.Font.FredokaOne; textLabel.TextSize = 14; textLabel.TextColor3 = color; textLabel.TextStrokeTransparency = 0; textLabel.TextStrokeColor3 = Color3.new(0,0,0)
+    end
+    billboard.ESPLabel.Text = textValue
+end
+
+local function UpdateESP()
+    -- HANYA RUN LOOP JIKA SALAH SATU ESP PLAYER/KILLER AKTIF
+    if isPlayerEspActive or isKillerEspActive then
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                local isKiller = isPlayerKiller(p)
+                local root = p.Character:FindFirstChild("HumanoidRootPart")
+                if root then
+                    -- Hindari menghitung jarak jika target ESP nya tidak diaktifkan
+                    if (not isKiller and isPlayerEspActive) or (isKiller and isKillerEspActive) then
+                        local distance = math.floor((Camera.CFrame.Position - root.Position).Magnitude)
+                        local espText = p.Name .. "\n[" .. distance .. "m]"
+                        
+                        if not isKiller and isPlayerEspActive then
+                            if not p.Character:FindFirstChild("PEH") then local h = Instance.new("Highlight", p.Character); h.Name = "PEH"; h.FillColor = PlayerEspColor; h.FillTransparency = 0.5 end
+                            CreateOrUpdateEspText(p.Character, "PE_Text", PlayerEspColor, espText)
+                        end
+                        if isKiller and isKillerEspActive then
+                            if not p.Character:FindFirstChild("KEH") then local h = Instance.new("Highlight", p.Character); h.Name = "KEH"; h.FillColor = KillerEspColor; h.FillTransparency = 0.5 end
+                            CreateOrUpdateEspText(p.Character, "KE_Text", KillerEspColor, espText)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- HANYA RUN LOOP JIKA ESP GENERATOR AKTIF
+    if isGeneratorEspActive then
+        for _, v in pairs(activeGenerators) do
+            if v and v.Parent then
+                if not v:FindFirstChild("GEH") then local h = Instance.new("Highlight", v); h.Name = "GEH"; h.FillColor = GeneratorEspColor; h.FillTransparency = 0.5 end
+            end
+        end
+    end
+
+    -- HANYA RUN LOOP JIKA ESP PALLET AKTIF
+    if isPalletEspActive then
+        for _, v in pairs(activePallets) do
+            if v and v.Parent then
+                if not v:FindFirstChild("PalletEH") then local h = Instance.new("Highlight", v); h.Name = "PalletEH"; h.FillColor = PalletEspColor; h.FillTransparency = 0.5 end
+            end
+        end
+    end
+
+    -- HANYA RUN LOOP JIKA ESP HOOK AKTIF
+    if isHookEspActive then
+        for i, v in ipairs(activeHooks) do
+            if v and v.Parent then
+                if not v:FindFirstChild("HookEH") then local h = Instance.new("Highlight", v); h.Name = "HookEH"; h.FillColor = HookEspColor; h.FillTransparency = 0.5 end
+                local hookPoint = v:FindFirstChild("HookPoint"); local targetPos = hookPoint and hookPoint.Position or v:GetPivot().Position
+                local distance = math.floor((Camera.CFrame.Position - targetPos).Magnitude)
+                CreateOrUpdateEspText(v, "HookE_Text", HookEspColor, "[" .. i .. "]")
+            end
+        end
+    end
+end
+
+-- ================= TAB: INFO =================
+local function AddInfo(t, o)
+    local l = Instance.new("TextLabel", InfoPage); l.LayoutOrder = o; l.Size = UDim2.new(1, -20, 0, 40); l.BackgroundTransparency = 1; l.Text = t; l.TextColor3 = Color3.new(1,1,1); l.TextSize = 22; l.Font = "PatrickHand"
+end
+AddInfo("Developer: Tio sc", 1); AddInfo("Version: V1 Lite + Optimized ESP", 2); AddInfo("Status: Stable", 3)
+
+-- NAVIGATION & TOGGLE
+local function SetPage(p)
+    TelePage.Visible = (p=="Tele"); ToolsPage.Visible = (p=="Tools"); MiscPage.Visible = (p=="Misc"); InfoPage.Visible = (p=="Info")
+    TeleLine.Visible = TelePage.Visible; ToolsLine.Visible = ToolsPage.Visible; MiscLine.Visible = MiscPage.Visible; InfoLine.Visible = InfoPage.Visible
+end
+TeleTab.MouseButton1Click:Connect(function() SetPage("Tele") end); ToolsTab.MouseButton1Click:Connect(function() SetPage("Tools") end); MiscTab.MouseButton1Click:Connect(function() SetPage("Misc") end); InfoTab.MouseButton1Click:Connect(function() SetPage("Info") end)
+
+FloatingIcon.MouseButton1Click:Connect(function()
+    if isGuiOpen then 
+        isGuiOpen = false; local t = TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(0,0,0,0)}); t:Play(); t.Completed:Connect(function() if not isGuiOpen then MainFrame.Visible = false end end)
+    else 
+        isGuiOpen = true; MainFrame.Visible = true; TweenService:Create(MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 520, 0, 340)}):Play() 
+    end
+end)
+CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+SetPage("Tele")
+
+-- ================= SYSTEM AUTO TELEPORT GENERATOR =================
+local function getBestGenerator()
+    scanMapObjects() 
+    local bestGen = nil
+    for _, gen in pairs(activeGenerators) do
+        if gen and gen.Parent then
+            local playersNearby = 0
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local dist = (p.Character.HumanoidRootPart.Position - gen:GetPivot().Position).Magnitude
+                    if dist < 15 then 
+                        playersNearby = playersNearby + 1
+                    end
+                end
+            end
+            if playersNearby == 0 then
+                return gen 
+            elseif bestGen == nil then
+                bestGen = gen 
+            end
+        end
+    end
+    return bestGen
+end
+
+-- LOOP UTAMA UNTUK AUTO TELEPORT
+task.spawn(function()
+    while task.wait(0.5) do
+        if isAutoGenActive and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local root = LocalPlayer.Character.HumanoidRootPart
+            
+            local killerTooClose = false
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and isPlayerKiller(p) and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local dist = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
+                    if dist <= 25 then 
+                        killerTooClose = true
+                        break
+                    end
+                end
+            end
+
+            if killerTooClose then
+                currentAutoGenTarget = getBestGenerator()
+                if currentAutoGenTarget then
+                    LocalPlayer.Character:PivotTo(currentAutoGenTarget:GetPivot() * CFrame.new(0, 2, 8))
+                    task.wait(1)
+                end
+                continue
+            end
+
+            if not currentAutoGenTarget or not currentAutoGenTarget.Parent then
+                currentAutoGenTarget = getBestGenerator()
+                if currentAutoGenTarget then
+                    LocalPlayer.Character:PivotTo(currentAutoGenTarget:GetPivot() * CFrame.new(0, 2, 8))
+                    task.wait(0.5)
+                end
+            else
+                local distToGen = (root.Position - currentAutoGenTarget:GetPivot().Position).Magnitude
+                if distToGen > 20 then
+                    LocalPlayer.Character:PivotTo(currentAutoGenTarget:GetPivot() * CFrame.new(0, 2, 8))
+                end
+            end
+        end
+    end
+end)
+
+-- CORE LOOP ANIMASI DLL
+RunService.Heartbeat:Connect(function()
+    pcall(function()
+        local hue = (tick() * 0.1) % 1 
+        local rainbowColor = Color3.fromHSV(hue, 1, 1)
+        for _, item in ipairs(rainbowElements) do
+            if item.obj and item.obj.Parent then item.obj[item.prop] = rainbowColor end
+        end
+        if MarqueeText and MarqueeText.Parent then
+            local newPos = MarqueeText.Position.X.Scale - 0.002
+            if newPos <= -1 then newPos = 1 end
+            MarqueeText.Position = UDim2.new(newPos, 0, 0, 0)
+        end
+        
+        if isNoclip and LocalPlayer.Character then 
+            for _,p in pairs(LocalPlayer.Character:GetDescendants()) do 
+                if p:IsA("BasePart") then p.CanCollide = false end 
+            end 
+        end
+        
+        if currentWalkSpeed > 16 and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+            LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = currentWalkSpeed
+        end
+        
+        -- Fungsi Update ESP sekarang sudah di optimasi (Hanya kalkulasi jika statusnya ON)
+        UpdateESP()
+    end)
+end)
