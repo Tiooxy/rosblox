@@ -1,7 +1,7 @@
 local map = {
     [93978595733734] = "VD",
     [109686116036889] = "DN",
-    [107467295209358] = "desrt",
+    [125224440903394] = "desrt",
 }
 
 local base = "https://raw.githubusercontent.com/Tiooxy/rosblox/refs/heads/main/"
